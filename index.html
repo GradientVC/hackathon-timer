@@ -1,0 +1,368 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#11191F">
+</head>
+<body>
+<title>Descent Clock</title>
+<meta name="description" content="Five-minute countdown for the Gradient hackathon.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@800&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Single committed theme: this is a projected screen. Brand black ground, off-white type,
+   olive as the cold accent, red as heat. Both pairings are approved in the brand guide. */
+:root{
+  --ground:#11191F;
+  --ink:#FAF9F6;
+  --olive:#D8D8B8;
+  --red:#EA4335;
+  --accent:#D8D8B8;
+  --muted:rgba(250,249,246,.52);
+  --dim:rgba(250,249,246,.3);
+  --faint:rgba(250,249,246,.14);
+  --display:"FK Grotesk","Inter Tight","Inter","Helvetica Neue",Helvetica,Arial,sans-serif;
+  --mono:"FK Grotesk Mono","IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+  --ui:clamp(11px,1.15vw,20px);
+  --pad:clamp(16px,3vmin,40px);
+  color-scheme:dark;
+}
+html,body{height:100%;margin:0}
+body{background:var(--ground);color:var(--ink);font-family:var(--mono);overflow:hidden;-webkit-font-smoothing:antialiased}
+
+#field{position:fixed;inset:0;z-index:0;width:100%;height:100%;display:block;image-rendering:pixelated}
+
+.stage{position:fixed;inset:0;z-index:1;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:auto 1fr auto;padding:var(--pad);gap:var(--pad) 0;box-sizing:border-box}
+.stage.idle{cursor:none}
+
+/* Segmented rule along the top edge: one segment per minute, rightmost drains first. */
+.rule{position:absolute;top:0;left:0;right:0;height:5px;display:flex;gap:4px}
+.seg{flex:1;background:var(--faint);position:relative;overflow:hidden}
+.seg i{position:absolute;inset:0;background:var(--accent);transform-origin:left center;transform:scaleX(1);will-change:transform}
+
+.corner{font-size:var(--ui);line-height:1.35;letter-spacing:.04em;min-width:0}
+.tl{grid-area:1/1}
+.tr{grid-area:1/2;text-align:right}
+.bl{grid-area:3/1;align-self:end}
+.br{grid-area:3/2;justify-self:end;align-self:end;text-align:right}
+.eyebrow{margin:0 0 .3em;font-size:.78em;letter-spacing:.22em;text-transform:uppercase;color:var(--accent);font-weight:500}
+.value{margin:0;color:var(--ink);font-weight:500;font-variant-numeric:tabular-nums;white-space:nowrap}
+.tr .value{font-size:1.7em;line-height:1.1}
+
+.clock{grid-area:2/1/3/3;place-self:center;display:flex;flex-direction:column;align-items:center;gap:clamp(8px,1.8vmin,24px);max-width:100%;text-align:center}
+.time{appearance:none;background:none;border:0;padding:0 .02em;margin:0;cursor:pointer;color:var(--ink);
+  font-family:var(--display);font-weight:800;font-size:min(32vw,58vh);line-height:.86;letter-spacing:-.045em;
+  font-variant-numeric:tabular-nums;white-space:nowrap;transform-origin:center}
+.time:focus-visible{outline:2px solid var(--accent);outline-offset:.04em}
+.time.tick{animation:tick .32s cubic-bezier(.2,.8,.2,1)}
+@keyframes tick{0%{transform:scale(1)}30%{transform:scale(1.025)}100%{transform:scale(1)}}
+.status{display:flex;gap:1.2em;align-items:baseline;font-size:clamp(12px,1.5vw,26px);letter-spacing:.24em;text-transform:uppercase;color:var(--accent);font-weight:500;font-variant-numeric:tabular-nums}
+.over{color:var(--muted);letter-spacing:.06em}
+.over:empty{display:none}
+
+.wordmark{display:block;line-height:0}
+.wordmark svg{height:clamp(14px,1.55vw,26px);width:auto;display:block}
+.wordmark .logo-white{display:none}
+.stage[data-hot="1"] .wordmark .logo-inv{display:none}
+.stage[data-hot="1"] .wordmark .logo-white{display:block}
+
+.controls{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:.15em 1.5em;transition:opacity .5s}
+.controls button{appearance:none;background:none;border:0;margin:0;padding:.3em 0;color:var(--muted);font:inherit;letter-spacing:.14em;text-transform:uppercase;cursor:pointer;
+  text-decoration:underline;text-decoration-color:transparent;text-underline-offset:.4em;text-decoration-thickness:1px;transition:color .2s,text-decoration-color .2s;white-space:nowrap}
+.controls button:hover,.controls button:focus-visible{color:var(--ink);text-decoration-color:var(--accent);outline:none}
+.controls button[hidden]{display:none}
+.controls kbd{font:inherit;color:var(--dim);margin-left:.55em;letter-spacing:.06em;text-transform:none}
+.stage.idle .controls{opacity:0;pointer-events:none}
+
+@media (max-width:640px){
+  .stage{grid-template-rows:auto 1fr auto auto;gap:calc(var(--pad)*.7) 0}
+  .bl{grid-area:3/1/4/3}
+  .br{grid-area:4/1/5/3;justify-self:start;text-align:left}
+  .controls{justify-content:flex-start;gap:.1em 1.2em}
+}
+@media (hover:none) and (pointer:coarse){.controls kbd{display:none}}
+@media (prefers-reduced-motion:reduce){.time.tick{animation:none}.controls{transition:none}}
+</style>
+
+<canvas id="field" aria-hidden="true"></canvas>
+
+<div class="stage" id="stage" data-state="standby" data-hot="0">
+  <div class="rule" id="rule" aria-hidden="true"></div>
+
+  <div class="corner tl">
+    <p class="eyebrow">Gradient descent</p>
+    <p class="value">step <span id="step">000 / 300</span></p>
+  </div>
+
+  <div class="corner tr">
+    <p class="eyebrow">loss</p>
+    <p class="value" id="loss">1.0000</p>
+  </div>
+
+  <main class="clock">
+    <button class="time" id="time" type="button" aria-label="Start or pause the countdown" aria-live="off">05:00</button>
+    <div class="status" role="status" aria-live="polite"><span id="status">Standby</span><span class="over" id="over"></span></div>
+  </main>
+
+  <div class="corner bl">
+    <span class="wordmark" aria-label="Gradient">
+      <svg class="logo-inv" role="img" aria-hidden="true" width="980" height="123" viewBox="0 0 980 123" fill="none" xmlns="http://www.w3.org/2000/svg">
+<path fill-rule="evenodd" clip-rule="evenodd" d="M11.9208 2.28793H135.339L143.276 16.2855H37.9908L67.3137 69.2412L58.3234 82.6603L11.9208 2.28793ZM8.50667 3.95732L0 16.4755L58.0768 118.119L110.397 36.6279H93.6967L58.0862 89.8396L8.50667 3.95732ZM44.4206 20.0793L51.4858 32.8345H117.339L61.4529 119.883H76.8066L142.992 20.0793H44.4206Z" fill="#EA4335"/>
+<path fill-rule="evenodd" clip-rule="evenodd" d="M219.062 0C181.006 0 158.548 22.458 158.548 61.0857C158.548 99.7135 180.924 122.171 218.899 122.171C256.955 122.171 274.513 98.9785 274.513 64.8423V57.4108H215.142V76.9288H250.503C249.85 86.8104 242.745 101.592 219.47 101.592C196.032 101.592 183.946 86.892 183.946 61.0857C183.946 35.3611 196.522 20.4164 219.634 20.4164C242.418 20.4164 248.707 33.7278 249.932 43.3643H272.798V40.9144C271.9 22.6213 256.71 0 219.062 0ZM791.049 2.28735H763.772V119.886H787.537V39.9351H788.844L838.496 119.886H865.773V2.28735H842.008V82.2378H840.701L791.049 2.28735ZM980 2.28748H875.632V23.4388H915.239V119.886H940.392V23.4388H980V2.28748ZM666.271 2.28748H751.285V22.6222H691.179V50.4701H743.119V70.8048H691.179V99.551H752.429V119.886H666.271V2.28748ZM649.753 2.28748H624.6V119.886H649.753V2.28748ZM552.521 2.28748C589.597 2.28748 613.362 24.7455 613.362 61.0866C613.362 97.4277 589.597 119.886 552.521 119.886H505.563V2.28748H552.521ZM530.553 98.9794H551.541C573.101 98.9794 588.127 86.3212 588.127 61.0866C588.127 35.852 573.101 23.1938 551.541 23.1938H530.553V98.9794ZM456.546 2.28748H424.697L384.517 117.436V119.886H409.18L418.245 92.1195H462.345L471.491 119.886H496.726V117.436L456.546 2.28748ZM455.893 71.2948H424.779L439.642 25.7255H440.948L455.893 71.2948ZM343.096 2.28748C364.819 2.28748 382.05 14.2106 382.05 37.3219C382.05 60.1883 365.962 72.1931 346.281 72.1931H341.217L382.867 117.436V119.886H354.937L311.818 71.7848H310.185V119.886H285.522V2.28748H343.096ZM310.185 53.41H339.176C350.201 53.41 357.714 48.2651 357.714 37.9753C357.714 27.6854 350.201 22.6222 339.176 22.6222H310.185V53.41Z" fill="white"/>
+</svg>
+      <svg class="logo-white" role="img" aria-hidden="true" width="980" height="123" viewBox="0 0 980 123" fill="none" xmlns="http://www.w3.org/2000/svg">
+<path fill-rule="evenodd" clip-rule="evenodd" d="M11.9208 2.28796H135.339L143.276 16.2856H37.9908L67.3137 69.2412L58.3234 82.6603L11.9208 2.28796ZM8.50667 3.95735L0 16.4755L58.0768 118.119L110.397 36.6279H93.6967L58.0862 89.8396L8.50667 3.95735ZM44.4206 20.0793L51.4858 32.8346H117.339L61.4529 119.883H76.8066L142.992 20.0793H44.4206Z" fill="white"/>
+<path fill-rule="evenodd" clip-rule="evenodd" d="M219.062 0C181.006 0 158.548 22.458 158.548 61.0857C158.548 99.7135 180.924 122.171 218.899 122.171C256.955 122.171 274.513 98.9785 274.513 64.8423V57.4108H215.142V76.9288H250.503C249.85 86.8104 242.745 101.592 219.47 101.592C196.032 101.592 183.946 86.892 183.946 61.0857C183.946 35.3611 196.522 20.4164 219.634 20.4164C242.418 20.4164 248.707 33.7278 249.932 43.3643H272.798V40.9144C271.9 22.6213 256.71 0 219.062 0ZM791.049 2.28735H763.772V119.886H787.537V39.9351H788.844L838.496 119.886H865.773V2.28735H842.008V82.2378H840.701L791.049 2.28735ZM980 2.28748H875.632V23.4388H915.239V119.886H940.392V23.4388H980V2.28748ZM666.271 2.28748H751.285V22.6222H691.179V50.4701H743.119V70.8048H691.179V99.551H752.429V119.886H666.271V2.28748ZM649.753 2.28748H624.6V119.886H649.753V2.28748ZM552.521 2.28748C589.597 2.28748 613.362 24.7455 613.362 61.0866C613.362 97.4277 589.597 119.886 552.521 119.886H505.563V2.28748H552.521ZM530.553 98.9794H551.541C573.101 98.9794 588.127 86.3212 588.127 61.0866C588.127 35.852 573.101 23.1938 551.541 23.1938H530.553V98.9794ZM456.546 2.28748H424.697L384.517 117.436V119.886H409.18L418.245 92.1195H462.345L471.491 119.886H496.726V117.436L456.546 2.28748ZM455.893 71.2948H424.779L439.642 25.7255H440.948L455.893 71.2948ZM343.096 2.28748C364.819 2.28748 382.05 14.2106 382.05 37.3219C382.05 60.1883 365.962 72.1931 346.281 72.1931H341.217L382.867 117.436V119.886H354.937L311.818 71.7848H310.185V119.886H285.522V2.28748H343.096ZM310.185 53.41H339.176C350.201 53.41 357.714 48.2651 357.714 37.9753C357.714 27.6854 350.201 22.6222 339.176 22.6222H310.185V53.41Z" fill="white"/>
+</svg>
+    </span>
+  </div>
+
+  <div class="corner br controls" id="controls">
+    <button type="button" data-act="toggle"><span>Start</span><kbd>space</kbd></button>
+    <button type="button" data-act="reset"><span>Reset</span><kbd>R</kbd></button>
+    <button type="button" data-act="minus"><span>&minus;1 min</span><kbd>&darr;</kbd></button>
+    <button type="button" data-act="plus"><span>+1 min</span><kbd>&uarr;</kbd></button>
+    <button type="button" data-act="full"><span>Fullscreen</span><kbd>F</kbd></button>
+    <button type="button" data-act="sound"><span>Sound on</span><kbd>M</kbd></button>
+  </div>
+</div>
+
+<script>
+(() => {
+  const $ = s => document.querySelector(s);
+  const stage = $('#stage'), canvas = $('#field'), ctx = canvas.getContext('2d', { alpha: false });
+  const timeEl = $('#time'), statusEl = $('#status'), overEl = $('#over'), stepEl = $('#step'), lossEl = $('#loss'), ruleEl = $('#rule');
+  const btnToggle = $('[data-act="toggle"]'), btnSound = $('[data-act="sound"]');
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+  const lerpC = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+  const smoothstep = (e0, e1, x) => { const t = clamp((x - e0) / (e1 - e0), 0, 1); return t * t * (3 - 2 * t); };
+  const rgb = c => 'rgb(' + Math.round(c[0]) + ',' + Math.round(c[1]) + ',' + Math.round(c[2]) + ')';
+
+  // ---- duration: ?m=5 (minutes) or ?s=300 (seconds); arrows adjust by a minute
+  const params = new URLSearchParams(location.search);
+  let duration = clamp(Math.round(params.has('s') ? +params.get('s') : (+params.get('m') || 5) * 60) || 300, 10, 6 * 3600);
+  let unit = 60, segs = [];
+
+  let state = 'standby', remainingMs = duration * 1000, endAt = 0, doneAt = 0, soundOn = true, lastSec = -1;
+
+  const remaining = () => state === 'running' ? Math.max(0, endAt - Date.now()) : remainingMs;
+
+  function setState(s) {
+    state = s; stage.dataset.state = s;
+    btnToggle.hidden = s === 'done';
+    btnToggle.firstElementChild.textContent = s === 'running' ? 'Pause' : s === 'paused' ? 'Resume' : 'Start';
+    if (s !== 'running') stage.classList.remove('idle');
+    wake();
+  }
+  function start() { if (state === 'done') return; ensureAudio(); endAt = Date.now() + remainingMs; setState('running'); }
+  function pause() { remainingMs = Math.max(0, endAt - Date.now()); setState('paused'); }
+  function toggle() { state === 'running' ? pause() : start(); }
+  function reset() { remainingMs = duration * 1000; overEl.textContent = ''; setState('standby'); render(true); }
+  function adjust(min) {
+    const d = clamp(duration + min * 60, 60, 6 * 3600), delta = (d - duration) * 1000;
+    if (!delta) return;
+    duration = d;
+    if (state === 'running') endAt = Math.max(Date.now() + 1000, endAt + delta);
+    else {
+      remainingMs = clamp(remainingMs + delta, 1000, duration * 1000);
+      if (state === 'done') { overEl.textContent = ''; setState('paused'); }
+    }
+    buildRule(); render(true);
+  }
+
+  function buildRule() {
+    unit = duration <= 1200 ? 60 : duration <= 3600 ? 300 : 900;
+    const n = Math.ceil(duration / unit);
+    ruleEl.textContent = ''; segs = [];
+    for (let i = 0; i < n; i++) {
+      const s = document.createElement('span'); s.className = 'seg';
+      const f = document.createElement('i'); s.appendChild(f); ruleEl.appendChild(s); segs.push(f);
+    }
+  }
+
+  // ---- heat: barely warms for most of the run, swings to red in the final minute, flat red at zero
+  function heat(p) {
+    const knee = Math.max(0, 1 - 60 / duration);
+    if (knee <= 0) return p * p;
+    if (p < knee) return 0.15 * (p / knee);
+    const q = (p - knee) / (1 - knee);
+    return 0.15 + 0.85 * Math.pow(q, 1.6);
+  }
+
+  const GROUND = [17, 25, 31], OXBLOOD = [44, 12, 10], COLD_HI = [108, 112, 92], RED = [234, 67, 53], OLIVE = [216, 216, 184], INK = [250, 249, 246];
+  let lastAccent = '';
+  function applyHeat(h) {
+    const acc = state === 'done' ? INK : lerpC(OLIVE, RED, h * h);
+    const css = rgb(acc);
+    if (css !== lastAccent) { lastAccent = css; stage.style.setProperty('--accent', css); }
+    stage.dataset.hot = (h > 0.55 || state === 'done') ? '1' : '0';
+  }
+
+  const fmt = s => String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0');
+
+  function render(force) {
+    let remMs = remaining();
+    if (state === 'running' && remMs <= 0) { remainingMs = 0; remMs = 0; doneAt = Date.now(); setState('done'); chime(); }
+    const secs = Math.ceil(remMs / 1000);
+    if (secs !== lastSec || force) {
+      lastSec = secs;
+      timeEl.textContent = fmt(secs);
+      const w = String(duration).length;
+      stepEl.textContent = String(duration - secs).padStart(w, '0') + ' / ' + duration;
+      if (state === 'running' && secs <= 10 && secs > 0 && !reduced) {
+        timeEl.classList.remove('tick'); void timeEl.offsetWidth; timeEl.classList.add('tick');
+      }
+      document.title = state === 'standby' ? 'Descent Clock' : fmt(secs) + ' · Descent Clock';
+    }
+    lossEl.textContent = (remMs / (duration * 1000)).toFixed(4);
+    statusEl.textContent = state === 'standby' ? 'Standby' : state === 'paused' ? 'Paused' : state === 'done' ? 'Converged' : (remMs <= 60000 ? 'Converging' : 'Descending');
+    if (state === 'done') overEl.textContent = '+' + fmt(Math.floor((Date.now() - doneAt) / 1000));
+    const remS = remMs / 1000;
+    for (let i = 0; i < segs.length; i++) segs[i].style.transform = 'scaleX(' + clamp((remS - i * unit) / unit, 0, 1).toFixed(4) + ')';
+    const h = state === 'done' ? 1 : heat(1 - remMs / (duration * 1000));
+    applyHeat(h);
+    return h;
+  }
+
+  // ---- the field: a drifting loss landscape, rendered at coarse cells with ordered dither
+  const BUMPS = [
+    { a: .21, b: .17, pa: 0.3, pb: 1.9, s: .30, w: 1.0 },
+    { a: .13, b: .23, pa: 2.1, pb: 0.4, s: .22, w: .85 },
+    { a: .19, b: .11, pa: 4.0, pb: 3.1, s: .26, w: .9 },
+    { a: .09, b: .15, pa: 1.2, pb: 5.0, s: .36, w: .6 },
+    { a: .17, b: .27, pa: 5.5, pb: 2.6, s: .18, w: .7 },
+  ];
+  const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5].map(v => (v + .5) / 16);
+  const LEVELS = 6;
+  let cols = 0, rows = 0, img = null, data = null;
+
+  function grid() {
+    const W = Math.max(1, innerWidth, document.documentElement.clientWidth), H = Math.max(1, innerHeight, document.documentElement.clientHeight);
+    const cell = Math.max(5, Math.round(Math.min(W, H) / 84));
+    return [Math.max(1, Math.ceil(W / cell)), Math.max(1, Math.ceil(H / cell))];
+  }
+  function needsResize() { const g = grid(); return g[0] !== cols || g[1] !== rows; }
+  function resize() {
+    [cols, rows] = grid();
+    canvas.width = cols; canvas.height = rows;
+    img = ctx.createImageData(cols, rows); data = img.data;
+    drawField(lastH, lastT);
+  }
+
+  function drawField(h, t) {
+    if (!img) return;
+    const aspect = cols / rows;
+    const cs = BUMPS.map(b => ({
+      x: (0.5 + 0.38 * Math.sin(t * b.a + b.pa)) * aspect,
+      y: 0.5 + 0.38 * Math.cos(t * b.b + b.pb),
+      k: -1 / (2 * b.s * b.s), w: b.w
+    }));
+    const flat = smoothstep(0.85, 1, h);
+    const lo = lerpC(GROUND, OXBLOOD, h), hi = lerpC(COLD_HI, RED, smoothstep(0, 0.75, h));
+    const L = LEVELS - 1;
+    let o = 0;
+    for (let y = 0; y < rows; y++) {
+      const v = y / rows, by = (y & 3) << 2;
+      for (let x = 0; x < cols; x++) {
+        const u = x / cols * aspect;
+        let s = 0;
+        for (let i = 0; i < cs.length; i++) { const c = cs[i], dx = u - c.x, dy = v - c.y; s += c.w * Math.exp((dx * dx + dy * dy) * c.k); }
+        let val = Math.min(1, s / 1.15); val = Math.pow(val, 1.5); val += (1 - val) * flat;
+        const q = Math.min(L, Math.floor(val * L + BAYER[by | (x & 3)])) / L;
+        data[o++] = lo[0] + (hi[0] - lo[0]) * q;
+        data[o++] = lo[1] + (hi[1] - lo[1]) * q;
+        data[o++] = lo[2] + (hi[2] - lo[2]) * q;
+        data[o++] = 255;
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+  }
+
+  // ---- loop
+  let lastH = 0, lastT = 0, lastField = 0, t0 = performance.now(), visible = true;
+  function frame(now) {
+    if (!visible) return;
+    if (!img || needsResize()) resize();
+    lastH = render(false);
+    if (now - lastField > 1000 / 24) {
+      lastField = now;
+      lastT = reduced ? 0 : (now - t0) / 1000 * 0.12;
+      drawField(lastH, lastT);
+    }
+    requestAnimationFrame(frame);
+  }
+  document.addEventListener('visibilitychange', () => {
+    visible = !document.hidden;
+    if (visible) requestAnimationFrame(frame);
+  });
+  setInterval(() => { if (!visible) render(false); }, 500);
+
+  // ---- sound: three descending tones at zero
+  let actx = null;
+  function ensureAudio() {
+    try { if (!actx) actx = new (window.AudioContext || window.webkitAudioContext)(); if (actx.state === 'suspended') actx.resume(); } catch (e) { actx = null; }
+  }
+  function chime() {
+    if (!soundOn || !actx) return;
+    const now = actx.currentTime;
+    [[880, 0], [660, .22], [440, .44]].forEach(([f, dt]) => {
+      const o = actx.createOscillator(), g = actx.createGain();
+      o.type = 'triangle'; o.frequency.value = f;
+      g.gain.setValueAtTime(0.0001, now + dt);
+      g.gain.exponentialRampToValueAtTime(0.32, now + dt + 0.015);
+      g.gain.exponentialRampToValueAtTime(0.0001, now + dt + 0.34);
+      o.connect(g).connect(actx.destination);
+      o.start(now + dt); o.stop(now + dt + 0.36);
+    });
+  }
+  function toggleSound() { soundOn = !soundOn; btnSound.firstElementChild.textContent = soundOn ? 'Sound on' : 'Sound off'; }
+
+  function fullscreen() {
+    const el = document.documentElement;
+    try {
+      if (document.fullscreenElement) document.exitFullscreen();
+      else if (el.requestFullscreen) el.requestFullscreen().catch(() => {});
+      else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+    } catch (e) {}
+  }
+
+  // ---- input
+  const ACTIONS = { toggle, reset, minus: () => adjust(-1), plus: () => adjust(1), full: fullscreen, sound: toggleSound };
+  document.querySelectorAll('[data-act]').forEach(b => b.addEventListener('click', () => { ACTIONS[b.dataset.act](); b.blur(); }));
+  timeEl.addEventListener('click', () => { toggle(); timeEl.blur(); });
+
+  addEventListener('keydown', e => {
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    const onButton = document.activeElement && document.activeElement.tagName === 'BUTTON';
+    switch (e.key) {
+      case ' ': case 'Enter': if (onButton) return; e.preventDefault(); toggle(); break;
+      case 'r': case 'R': reset(); break;
+      case 'f': case 'F': fullscreen(); break;
+      case 'm': case 'M': toggleSound(); break;
+      case 'ArrowUp': e.preventDefault(); adjust(1); break;
+      case 'ArrowDown': e.preventDefault(); adjust(-1); break;
+      default: return;
+    }
+  });
+
+  let idleT = 0;
+  function wake() {
+    stage.classList.remove('idle');
+    clearTimeout(idleT);
+    idleT = setTimeout(() => { if (state === 'running') stage.classList.add('idle'); }, 2500);
+  }
+  ['mousemove', 'pointerdown', 'touchstart', 'keydown'].forEach(ev => addEventListener(ev, wake, { passive: true }));
+
+  let rz = 0;
+  addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(resize, 80); });
+
+  buildRule(); setState('standby'); resize(); render(true); requestAnimationFrame(frame);
+})();
+</script>
+
+</body>
+</html>
