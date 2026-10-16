@@ -69,9 +69,9 @@ body{background:var(--ground);color:var(--ink);font-family:var(--mono);overflow:
 .stage[data-hot="1"] .wordmark .logo-white{display:block}
 
 .controls{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:.15em 1.5em;transition:opacity .5s}
-.controls button{appearance:none;background:none;border:0;margin:0;padding:.3em 0;color:var(--muted);font:inherit;letter-spacing:.14em;text-transform:uppercase;cursor:pointer;
+.controls button,.controls a{appearance:none;background:none;border:0;margin:0;padding:.3em 0;color:var(--muted);font:inherit;letter-spacing:.14em;text-transform:uppercase;cursor:pointer;
   text-decoration:underline;text-decoration-color:transparent;text-underline-offset:.4em;text-decoration-thickness:1px;transition:color .2s,text-decoration-color .2s;white-space:nowrap}
-.controls button:hover,.controls button:focus-visible{color:var(--ink);text-decoration-color:var(--accent);outline:none}
+.controls button:hover,.controls button:focus-visible,.controls a:hover,.controls a:focus-visible{color:var(--ink);text-decoration-color:var(--accent);outline:none}
 .controls button[hidden]{display:none}
 .controls kbd{font:inherit;color:var(--dim);margin-left:.55em;letter-spacing:.06em;text-transform:none}
 .stage.idle .controls{opacity:0;pointer-events:none}
@@ -126,6 +126,7 @@ body{background:var(--ground);color:var(--ink);font-family:var(--mono);overflow:
     <button type="button" data-act="plus"><span>+1 min</span><kbd>&uarr;</kbd></button>
     <button type="button" data-act="full"><span>Fullscreen</span><kbd>F</kbd></button>
     <button type="button" data-act="sound"><span>Sound on</span><kbd>M</kbd></button>
+    <a href="https://gradientvc.github.io/hackathon-timer/stopwatch/"><span>Stopwatch</span><kbd>&nearr;</kbd></a>
   </div>
 </div>
 
